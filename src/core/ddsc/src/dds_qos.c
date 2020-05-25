@@ -441,6 +441,14 @@ void dds_qset_bprop (dds_qos_t * __restrict qos, const char * name, const void *
   }
 }
 
+void dds_qset_entity_factory (dds_qos_t * __restrict qos, bool autoenable)
+{
+  if (qos == NULL)
+    return;
+  qos->entity_factory.autoenable_created_entities = autoenable;
+  qos->present |= QP_ADLINK_ENTITY_FACTORY;
+}
+
 bool dds_qget_userdata (const dds_qos_t * __restrict qos, void **value, size_t *sz)
 {
   if (qos == NULL || !(qos->present & QP_USER_DATA))
@@ -733,4 +741,13 @@ bool dds_qget_bprop (const dds_qos_t * __restrict qos, const char * name, void *
       *sz = 0;
   }
   return found;
+}
+
+bool dds_qget_entity_factory (const dds_qos_t * __restrict qos, bool *autoenable)
+{
+  if (qos == NULL || !(qos->present & QP_ADLINK_ENTITY_FACTORY))
+    return false;
+  if (autoenable)
+    *autoenable = qos->entity_factory.autoenable_created_entities;
+  return true;
 }

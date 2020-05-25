@@ -343,3 +343,75 @@ CU_Test(ddsc_participant_lookup, deleted) {
 
   dds_delete (participant);
 }
+
+CU_Test(ddsc_participant_enable, defaults) {
+  dds_entity_t participant;
+  dds_return_t status, status1;
+  dds_qos_t *pqos;
+  bool autoenable;
+
+  /* the participant on the default domain has it's entity factory enabled by default */
+  participant = dds_create_participant (DDS_DOMAIN_DEFAULT, NULL, NULL);
+  CU_ASSERT_FATAL(participant > 0);
+  pqos = dds_create_qos();
+  status = dds_get_qos(participant, pqos);
+  CU_ASSERT_EQUAL_FATAL(status, DDS_RETCODE_OK);
+  status = dds_qget_entity_factory(pqos, &autoenable);
+  CU_ASSERT_EQUAL_FATAL(status, true);
+  CU_ASSERT_EQUAL_FATAL(autoenable, true);
+  /* enabling an already enabled entity is a noop */
+  status1 = dds_enable (participant);
+  CU_ASSERT_EQUAL_FATAL(status1, DDS_RETCODE_OK);
+  /* we should actually check that the participant is really
+   * enabled by trying to set a qos that cannot be changed once
+   * the participant is enabled. However, such qos is not
+   * available on the participant and therefore we cannot really
+   * verify if the participant is enabled  */
+  status = dds_delete (participant);
+  CU_ASSERT_EQUAL_FATAL(status, DDS_RETCODE_OK);
+  dds_delete_qos(pqos);
+}
+
+CU_Test(ddsc_participant_enable, autoenable) {
+  dds_entity_t participant;
+  dds_qos_t *qos, *pqos;
+  bool autoenable;
+  bool status;
+  dds_return_t ret;
+
+  qos = dds_create_qos();
+  dds_qset_entity_factory(qos, false);
+
+  /* create a participant and check that the
+   * autoenable property is really disabled */
+  participant = dds_create_participant (DDS_DOMAIN_DEFAULT, qos, NULL);
+  CU_ASSERT_FATAL(participant > 0);
+
+  pqos = dds_create_qos();
+  ret = dds_get_qos(participant, pqos);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  status = dds_qget_entity_factory(pqos, &autoenable);
+  CU_ASSERT_EQUAL_FATAL(status, true);
+  CU_ASSERT_EQUAL_FATAL(autoenable, false);
+  /* enable the participant and check that the
+   * autoenable property is not affected */
+  ret = dds_enable(participant);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  ret = dds_get_qos(participant, pqos);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  status = dds_qget_entity_factory(pqos, &autoenable);
+  CU_ASSERT_EQUAL_FATAL(status, true);
+  CU_ASSERT_EQUAL_FATAL(autoenable, false);
+  /* change the autoenable property of the participant
+   * and verify that it is set to true */
+  dds_qset_entity_factory(pqos, true);
+  ret = dds_set_qos(participant, pqos);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  status = dds_qget_entity_factory(pqos, &autoenable);
+  CU_ASSERT_EQUAL_FATAL(status, true);
+  CU_ASSERT_EQUAL_FATAL(autoenable, true);
+  ret = dds_delete (participant);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  dds_delete_qos(qos);
+  dds_delete_qos(pqos);
+}

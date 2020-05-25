@@ -21,6 +21,7 @@
 #include "dds/ddsi/q_xmsg.h"
 #include "dds/ddsi/ddsi_entity_index.h"
 #include "dds/ddsi/ddsi_security_omg.h"
+#include "dds/ddsi/ddsi_iid.h"
 #include "dds__writer.h"
 #include "dds__listener.h"
 #include "dds__init.h"
@@ -180,10 +181,15 @@ static void dds_writer_interrupt (dds_entity *e) ddsrt_nonnull_all;
 
 static void dds_writer_interrupt (dds_entity *e)
 {
+  struct dds_writer * const wr = (struct dds_writer *) e;
   struct ddsi_domaingv * const gv = &e->m_domain->gv;
-  thread_state_awake (lookup_thread_state (), gv);
-  unblock_throttled_writer (gv, &e->m_guid);
-  thread_state_asleep (lookup_thread_state ());
+
+  /* no need to unblock if there is no ddsi writer */
+  if (wr->m_wr) {
+    thread_state_awake (lookup_thread_state (), gv);
+    unblock_throttled_writer (gv, &e->m_guid);
+    thread_state_asleep (lookup_thread_state ());
+  }
 }
 
 static void dds_writer_close (dds_entity *e) ddsrt_nonnull_all;
@@ -193,15 +199,19 @@ static void dds_writer_close (dds_entity *e)
   struct dds_writer * const wr = (struct dds_writer *) e;
   struct ddsi_domaingv * const gv = &e->m_domain->gv;
   struct thread_state1 * const ts1 = lookup_thread_state ();
-  thread_state_awake (ts1, gv);
-  nn_xpack_send (wr->m_xp, false);
-  (void) delete_writer (gv, &e->m_guid);
-  thread_state_asleep (ts1);
 
-  ddsrt_mutex_lock (&e->m_mutex);
-  while (wr->m_wr != NULL)
-    ddsrt_cond_wait (&e->m_cond, &e->m_mutex);
-  ddsrt_mutex_unlock (&e->m_mutex);
+  /* nothing to close if there was no ddsi writer */
+  if (wr->m_wr) {
+    thread_state_awake (ts1, gv);
+    nn_xpack_send (wr->m_xp, false);
+    (void) delete_writer (gv, &e->m_guid);
+    thread_state_asleep (ts1);
+
+    ddsrt_mutex_lock (&e->m_mutex);
+    while (wr->m_wr != NULL)
+      ddsrt_cond_wait (&e->m_cond, &e->m_mutex);
+    ddsrt_mutex_unlock (&e->m_mutex);
+  }
 }
 
 static dds_return_t dds_writer_delete (dds_entity *e) ddsrt_nonnull_all;
@@ -274,6 +284,57 @@ static void dds_writer_refresh_statistics (const struct dds_entity *entity, stru
     ddsi_get_writer_stats (wr->m_wr, &stat->kv[0].u.u64, &stat->kv[1].u.u32, &stat->kv[2].u.u64, &stat->kv[3].u.u64);
 }
 
+static dds_return_t dds_writer_enable (struct dds_entity *e)
+{
+  struct dds_writer *wr = (struct dds_writer *) e;
+  const struct ddsi_guid * ppguid;
+  struct participant * pp;
+  dds_return_t rc;
+
+  assert (dds_entity_kind (e) == DDS_KIND_WRITER);
+
+  /* calling enable on an entity whose factory is not enabled
+   * returns PRECONDITION_NOT_MET */
+  if ((wr->m_entity.m_parent != NULL) && !dds_entity_is_enabled(wr->m_entity.m_parent))
+    return DDS_RETCODE_PRECONDITION_NOT_MET;
+
+  thread_state_awake (lookup_thread_state (), &e->m_domain->gv);
+
+  ppguid = dds_entity_participant_guid (wr->m_entity.m_parent);
+  pp = entidx_lookup_participant_guid (e->m_domain->gv.entity_index, ppguid);
+  /* When deleting a participant, the child handles (that include the publisher)
+     are removed before removing the DDSI participant. So at this point, within
+     the publisher lock, we can assert that the participant exists. */
+  assert (pp != NULL);
+
+#ifdef DDSI_INCLUDE_SECURITY
+  /* Check if DDS Security is enabled */
+  if (q_omg_participant_is_secure (pp))
+  {
+    /* ask to access control security plugin for create writer permissions */
+    if (!q_omg_security_check_create_writer (pp, e->m_domain->gv.config.domainId, wr->m_topic->m_stopic->name, wr->m_entity.m_qos))
+    {
+      rc = DDS_RETCODE_NOT_ALLOWED_BY_SECURITY;
+      goto err_not_allowed;
+    }
+  }
+#endif
+
+  /* the entity is enabled, so we can create a ddsi representative for this writer
+   * discovery of this writer will occur after the writer has been registered */
+  if ((rc = new_writer (&wr->m_wr, &wr->m_entity.m_guid, NULL, pp, wr->m_topic->m_stopic, wr->m_entity.m_qos, wr->m_whc, dds_writer_status_cb, wr, wr->m_entity.m_iid)) == DDS_RETCODE_OK) {
+    wr->m_entity.m_flags |= DDS_ENTITY_ENABLED;
+    wr->m_entity.m_iid = get_entity_instance_id (&wr->m_entity.m_domain->gv, &wr->m_entity.m_guid);
+  }
+
+#ifdef DDSI_INCLUDE_SECURITY
+err_not_allowed:
+#endif
+
+  thread_state_asleep (lookup_thread_state ());
+  return rc;
+}
+
 const struct dds_entity_deriver dds_entity_deriver_writer = {
   .interrupt = dds_writer_interrupt,
   .close = dds_writer_close,
@@ -281,7 +342,8 @@ const struct dds_entity_deriver dds_entity_deriver_writer = {
   .set_qos = dds_writer_qos_set,
   .validate_status = dds_writer_status_validate,
   .create_statistics = dds_writer_create_statistics,
-  .refresh_statistics = dds_writer_refresh_statistics
+  .refresh_statistics = dds_writer_refresh_statistics,
+  .enable = dds_writer_enable
 };
 
 dds_entity_t dds_create_writer (dds_entity_t participant_or_publisher, dds_entity_t topic, const dds_qos_t *qos, const dds_listener_t *listener)
@@ -293,6 +355,7 @@ dds_entity_t dds_create_writer (dds_entity_t participant_or_publisher, dds_entit
   dds_entity_t publisher;
   struct whc_writer_info *wrinfo;
   bool created_implicit_pub = false;
+  bool autoenable;
 
   {
     dds_entity *p_or_p;
@@ -350,26 +413,9 @@ dds_entity_t dds_create_writer (dds_entity_t participant_or_publisher, dds_entit
   if ((rc = ddsi_xqos_valid (&gv->logconfig, wqos)) < 0 || (rc = validate_writer_qos(wqos)) != DDS_RETCODE_OK)
     goto err_bad_qos;
 
-  thread_state_awake (lookup_thread_state (), gv);
-  const struct ddsi_guid *ppguid = dds_entity_participant_guid (&pub->m_entity);
-  struct participant *pp = entidx_lookup_participant_guid (gv->entity_index, ppguid);
-  /* When deleting a participant, the child handles (that include the publisher)
-     are removed before removing the DDSI participant. So at this point, within
-     the publisher lock, we can assert that the participant exists. */
-  assert (pp != NULL);
-
-#ifdef DDSI_INCLUDE_SECURITY
-  /* Check if DDS Security is enabled */
-  if (q_omg_participant_is_secure (pp))
-  {
-    /* ask to access control security plugin for create writer permissions */
-    if (!q_omg_security_check_create_writer (pp, gv->config.domainId, tp->m_stopic->name, wqos))
-    {
-      rc = DDS_RETCODE_NOT_ALLOWED_BY_SECURITY;
-      goto err_not_allowed;
-    }
-  }
-#endif
+  /* get the autoenable setting of the parent
+  * this setting determines if the entity must be enabled or not */
+  dds_qget_entity_factory(pub->m_entity.m_qos, &autoenable);
 
   /* Create writer */
   ddsi_tran_conn_t conn = gv->xmit_conn;
@@ -382,25 +428,17 @@ dds_entity_t dds_create_writer (dds_entity_t participant_or_publisher, dds_entit
   wr->m_whc = whc_new (gv, wrinfo);
   whc_free_wrinfo (wrinfo);
   wr->whc_batch = gv->config.whc_batch;
-
-  rc = new_writer (&wr->m_wr, &wr->m_entity.m_guid, NULL, pp, tp->m_stopic, wqos, wr->m_whc, dds_writer_status_cb, wr);
-  assert(rc == DDS_RETCODE_OK);
-  thread_state_asleep (lookup_thread_state ());
-
-  wr->m_entity.m_iid = get_entity_instance_id (&wr->m_entity.m_domain->gv, &wr->m_entity.m_guid);
-  dds_entity_register_child (&pub->m_entity, &wr->m_entity);
-
+  wr->m_entity.m_iid = ddsi_iid_gen();
+  if (autoenable) {
+    (void)dds_writer_enable(&wr->m_entity);
+  }
+  dds_entity_register_child (wr->m_entity.m_parent, &wr->m_entity);
   dds_entity_init_complete (&wr->m_entity);
-
   dds_topic_allow_set_qos (tp);
   dds_topic_unpin (tp);
   dds_publisher_unlock (pub);
   return writer;
 
-#ifdef DDSI_INCLUDE_SECURITY
-err_not_allowed:
-  thread_state_asleep (lookup_thread_state ());
-#endif
 err_bad_qos:
   dds_delete_qos(wqos);
   dds_topic_allow_set_qos (tp);

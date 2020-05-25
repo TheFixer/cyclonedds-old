@@ -3182,4 +3182,290 @@ CU_Test(ddsc_take_mask_wl, combination_of_states, .init=reader_init, .fini=reade
     ret = samples_cnt();
     CU_ASSERT_EQUAL_FATAL(ret, MAX_SAMPLES - expected_cnt);
 }
-/*************************************************************************************************/
+
+CU_Test(ddsc_reader, enable_by_default) {
+  dds_entity_t participant, subscriber, reader, topic;
+  dds_return_t status, status1;
+  dds_qos_t *rqos, *pqos;
+  bool autoenable;
+
+  /* check that default autoenable setting of participant is true */
+  participant = dds_create_participant (DDS_DOMAIN_DEFAULT, NULL, NULL);
+  CU_ASSERT_FATAL(participant > 0);
+  pqos = dds_create_qos();
+  status = dds_get_qos(participant, pqos);
+  CU_ASSERT_EQUAL_FATAL(status, DDS_RETCODE_OK);
+  status = dds_qget_entity_factory(pqos, &autoenable);
+  CU_ASSERT_EQUAL_FATAL(status, true);
+  CU_ASSERT_EQUAL_FATAL(autoenable, true);
+  /* check that default autoenable setting of subscriber is true */
+  subscriber = dds_create_subscriber(participant, NULL, NULL);
+  CU_ASSERT_FATAL(subscriber > 0);
+  topic = dds_create_topic(participant, &Space_Type1_desc, "ddsc_reader_enable", NULL, NULL);
+  CU_ASSERT_FATAL(topic > 0);
+  reader = dds_create_reader(subscriber, topic, NULL, NULL);
+  CU_ASSERT_FATAL(reader > 0);
+  rqos = dds_create_qos();
+  status = dds_get_qos(reader, rqos);
+  CU_ASSERT_EQUAL_FATAL(status, DDS_RETCODE_OK);
+  status = dds_qget_entity_factory(rqos, &autoenable);
+  CU_ASSERT_EQUAL_FATAL(status, true);
+  CU_ASSERT_EQUAL_FATAL(autoenable, true);
+  /* enabling an already enabled entity is a noop */
+  status1 = dds_enable (reader);
+  CU_ASSERT_EQUAL_FATAL(status1, DDS_RETCODE_OK);
+  /* we check that the reader is really enabled
+   * by trying to set a qos that cannot be changed once
+   * the reader is enabled. We use the history qos
+   * for that purpose */
+  dds_qset_history(rqos, DDS_HISTORY_KEEP_ALL, 0);
+  status = dds_set_qos(reader, rqos);
+  CU_ASSERT_EQUAL_FATAL(status, DDS_RETCODE_IMMUTABLE_POLICY);
+  status = dds_delete (participant);
+  CU_ASSERT_EQUAL_FATAL(status, DDS_RETCODE_OK);
+  dds_delete_qos(pqos);
+  dds_delete_qos(rqos);
+}
+
+CU_Test(ddsc_reader, disable_reader_enable_later) {
+  dds_entity_t participant, subscriber, reader, topic;
+  dds_qos_t *pqos, *rqos;
+  bool autoenable;
+  bool status;
+  dds_return_t ret;
+  dds_history_kind_t hist_kind;
+  int32_t hist_depth;
+
+  pqos = dds_create_qos();
+  dds_qset_entity_factory(pqos, false);
+  /* create a participant with autoenable=false */
+  participant = dds_create_participant (DDS_DOMAIN_DEFAULT, pqos, NULL);
+  CU_ASSERT_FATAL(participant > 0);
+  /* create a default subscriber that should be disabled */
+  subscriber = dds_create_subscriber(participant, NULL, NULL);
+  CU_ASSERT_FATAL(subscriber > 0);
+  topic = dds_create_topic(participant, &Space_Type1_desc, "ddsc_reader_disabled", NULL, NULL);
+  CU_ASSERT_FATAL(topic > 0);
+  reader = dds_create_reader(subscriber, topic, NULL, NULL);
+  CU_ASSERT_FATAL(reader > 0);
+  /* get the autoenable value for this reader */
+  rqos = dds_create_qos();
+  ret = dds_get_qos(reader, rqos);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  status = dds_qget_entity_factory(rqos, &autoenable);
+  CU_ASSERT_EQUAL_FATAL(status, true);
+  CU_ASSERT_EQUAL_FATAL(autoenable, true);
+  /* the autoenable is true, but the reader should
+   * not be enabled because the subscriber was not enabled
+   * Because there is no explicit call to find out if an entity
+   * is enabled we do this by trying to set an immutable qos
+   * on the reader. This should succeed if the reader
+   * is not yet enabled, and fail if it is. We use the history
+   * qos for that purpose */
+  dds_qset_history(rqos, DDS_HISTORY_KEEP_ALL, 0);
+  ret = dds_set_qos(reader, rqos);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  /* check that qos is really changed */
+  ret = dds_get_qos(reader, rqos);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  dds_qget_history(rqos, &hist_kind,&hist_depth);
+  CU_ASSERT_EQUAL_FATAL(hist_kind, DDS_HISTORY_KEEP_ALL);
+  CU_ASSERT_EQUAL_FATAL(hist_depth, 0);
+  /* now try to enable the reader and set the immutable
+   * reader qos again. We should not be able to enable the
+   * reader because the subscriber is still disabled.
+   * The reader remains disabled and we should still be able
+   * to modify its immutable qos */
+  ret = dds_enable(reader);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_PRECONDITION_NOT_MET);
+  dds_qset_history(rqos, DDS_HISTORY_KEEP_LAST, 20);
+  ret = dds_set_qos(reader, rqos);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  /* check that qos is really changed */
+  ret = dds_get_qos(reader, rqos);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  dds_qget_history(rqos, &hist_kind,&hist_depth);
+  CU_ASSERT_EQUAL_FATAL(hist_kind, DDS_HISTORY_KEEP_LAST);
+  CU_ASSERT_EQUAL_FATAL(hist_depth, 20);
+  /* now enable the subscriber and the reader, and try
+   * to set an immutable qos. This then should fail */
+  ret = dds_enable(subscriber);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  ret = dds_enable(reader);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  dds_qset_history(rqos, DDS_HISTORY_KEEP_LAST, 30);
+  ret = dds_set_qos(reader, rqos);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_IMMUTABLE_POLICY);
+  /* check that qos has not changed */
+  ret = dds_get_qos(reader, rqos);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  dds_qget_history(rqos, &hist_kind,&hist_depth);
+  CU_ASSERT_EQUAL_FATAL(hist_kind, DDS_HISTORY_KEEP_LAST);
+  CU_ASSERT_EQUAL_FATAL(hist_depth, 20);
+
+  dds_delete_qos(rqos);
+  dds_delete_qos(pqos);
+  dds_delete (participant);
+}
+
+CU_Test(ddsc_reader, delete_disabled_reader) {
+  dds_entity_t participant, subscriber, reader, topic;
+  dds_qos_t *sqos, *rqos;
+  dds_return_t ret;
+  dds_history_kind_t hist_kind;
+  int32_t hist_depth;
+
+  /* create a participant */
+  participant = dds_create_participant (DDS_DOMAIN_DEFAULT, NULL, NULL);
+  CU_ASSERT_FATAL(participant > 0);
+  /* create a subscriber with autoenable=false */
+  sqos = dds_create_qos();
+  dds_qset_entity_factory(sqos, false);
+  subscriber = dds_create_subscriber(participant, sqos, NULL);
+  CU_ASSERT_FATAL(subscriber > 0);
+  /* create a reader */
+  topic = dds_create_topic(participant, &Space_Type1_desc, "ddsc_reader_disabled", NULL, NULL);
+  CU_ASSERT_FATAL(topic > 0);
+  reader = dds_create_reader(subscriber, topic, NULL, NULL);
+  CU_ASSERT_FATAL(reader > 0);
+  /* check that the reader is disabled by
+   * trying to set an immutable qos. This should succeed
+   * First check that current value is KEEPLAST-1 */
+  rqos = dds_create_qos();
+  ret = dds_get_qos(reader, rqos);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  dds_qget_history(rqos, &hist_kind,&hist_depth);
+  CU_ASSERT_EQUAL_FATAL(hist_kind, DDS_HISTORY_KEEP_LAST);
+  CU_ASSERT_EQUAL_FATAL(hist_depth, 1);
+  /* Now change the qos */
+  dds_qset_history(rqos, DDS_HISTORY_KEEP_LAST, 10);
+  ret = dds_set_qos(reader, rqos);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  /* check that qos is really changed */
+  ret = dds_get_qos(reader, rqos);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  dds_qget_history(rqos, &hist_kind,&hist_depth);
+  CU_ASSERT_EQUAL_FATAL(hist_kind, DDS_HISTORY_KEEP_LAST);
+  CU_ASSERT_EQUAL_FATAL(hist_depth, 10);
+  /* Now we know that the reader is disabled.
+   * Let's now delete the reader */
+  ret = dds_delete(reader);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  ret = dds_delete(participant);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  dds_delete_qos(rqos);
+  dds_delete_qos(sqos);
+}
+
+CU_Test(ddsc_reader, delete_parent_of_disabled_reader) {
+  dds_entity_t participant, subscriber, reader, topic;
+  dds_qos_t *sqos;
+  dds_return_t ret;
+
+  /* create a participant */
+  participant = dds_create_participant (DDS_DOMAIN_DEFAULT, NULL, NULL);
+  CU_ASSERT_FATAL(participant > 0);
+  /* create a subscriber with autoenable=false */
+  sqos = dds_create_qos();
+  dds_qset_entity_factory(sqos, false);
+  subscriber = dds_create_subscriber(participant, sqos, NULL);
+  CU_ASSERT_FATAL(subscriber > 0);
+  /* create a reader */
+  topic = dds_create_topic(participant, &Space_Type1_desc, "ddsc_reader_disabled", NULL, NULL);
+  CU_ASSERT_FATAL(topic > 0);
+  reader = dds_create_reader(subscriber, topic, NULL, NULL);
+  CU_ASSERT_FATAL(reader > 0);
+  ret = dds_delete(participant);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  dds_delete_qos(sqos);
+}
+
+CU_Test(ddsc_reader, autoenable_disabled_reader) {
+  dds_qos_t *pqos, *sqos, *rqos;
+  bool autoenable;
+  bool status;
+  dds_return_t ret;
+  dds_history_kind_t hist_kind;
+  int32_t hist_depth;
+  dds_entity_t participant, subscriber, topic, reader;
+
+  pqos = dds_create_qos();
+  dds_qset_entity_factory(pqos, false);
+  /* create a participant with autoenable=false */
+  participant = dds_create_participant (DDS_DOMAIN_DEFAULT, pqos, NULL);
+  CU_ASSERT_FATAL(participant > 0);
+  ret = dds_get_qos(participant, pqos);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  status = dds_qget_entity_factory(pqos, &autoenable);
+  CU_ASSERT_EQUAL_FATAL(status, true);
+  CU_ASSERT_EQUAL_FATAL(autoenable, false);
+  /* create a disabled subscriber */
+  subscriber = dds_create_subscriber(participant, NULL, NULL);
+  CU_ASSERT_FATAL(subscriber > 0);
+  /* check that autoenable of the subscriber is set to true */
+  sqos = dds_create_qos();
+  ret = dds_get_qos(subscriber, sqos);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  status = dds_qget_entity_factory(sqos, &autoenable);
+  CU_ASSERT_EQUAL_FATAL(status, true);
+  CU_ASSERT_EQUAL_FATAL(autoenable, true);
+  /* create topic */
+  topic = dds_create_topic(participant, &Space_Type1_desc, "ddsc_reader_disabled", NULL, NULL);
+  CU_ASSERT_FATAL(topic > 0);
+  /* create a reader */
+  reader = dds_create_reader(subscriber, topic, NULL, NULL);
+  CU_ASSERT_FATAL(reader > 0);
+  /* the reader should be disabled because the subscriber
+   * is disabled. To check that the reader is really
+   * disabled try to set an immutable qos. We use the history
+   * qos for that purpose. Setting it should succeed. */
+  rqos = dds_create_qos();
+  dds_qset_history(rqos, DDS_HISTORY_KEEP_ALL, 0);
+  ret = dds_set_qos(reader, rqos);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  /* check that qos is really changed */
+  ret = dds_get_qos(reader, rqos);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  dds_qget_history(rqos, &hist_kind,&hist_depth);
+  CU_ASSERT_EQUAL_FATAL(hist_kind, DDS_HISTORY_KEEP_ALL);
+  CU_ASSERT_EQUAL_FATAL(hist_depth, 0);
+  /* enable the reader, this should fail
+   * because the subscriber is not yet enabled */
+  ret = dds_enable(reader);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_PRECONDITION_NOT_MET);
+  /* Check that the reader is still disabled
+   * by trying to set an immutable qos */
+  dds_qset_history(rqos, DDS_HISTORY_KEEP_ALL, 10);
+  ret = dds_set_qos(reader, rqos);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  /* enable the subscriber */
+  ret = dds_enable(subscriber);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  /* to check that the subscriber is enabled
+  * we try to set an immutable qos, this should
+  * fail */
+  dds_qset_presentation(sqos, DDS_PRESENTATION_GROUP, true, true);
+  ret = dds_set_qos(subscriber, sqos);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_IMMUTABLE_POLICY);
+  /* the reader must be enabled because
+   * the reader was created using a subscriber
+   * with autoenabled=true  and the subscriber
+   * has been enabled. To check whether the reader
+   * is enabled we try setting an immutable qos,
+   * this should fail */
+  dds_qset_history(rqos, DDS_HISTORY_KEEP_ALL, 20);
+  ret = dds_set_qos(reader, rqos);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_IMMUTABLE_POLICY);
+  /* now enable the reader, this should be a noop */
+  ret = dds_enable(reader);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  /* check that the reader is enabled by trying to set an immutable qos */
+  dds_qset_history(rqos, DDS_HISTORY_KEEP_ALL, 30);
+  ret = dds_set_qos(reader, rqos);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_IMMUTABLE_POLICY);
+  ret = dds_delete(participant);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  dds_delete_qos(rqos);
+  dds_delete_qos(sqos);
+  dds_delete_qos(pqos);
+}

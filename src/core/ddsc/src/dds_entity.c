@@ -68,6 +68,9 @@ struct dds_statistics *dds_entity_deriver_dummy_create_statistics (const struct 
 void dds_entity_deriver_dummy_refresh_statistics (const struct dds_entity *e, struct dds_statistics *s) {
   (void) e; (void) s;
 }
+dds_return_t dds_entity_deriver_dummy_enable (struct dds_entity *e) {
+  (void) e; return DDS_RETCODE_ILLEGAL_OPERATION;
+}
 
 extern inline void dds_entity_deriver_interrupt (struct dds_entity *e);
 extern inline void dds_entity_deriver_close (struct dds_entity *e);
@@ -78,6 +81,7 @@ extern inline bool dds_entity_supports_set_qos (struct dds_entity *e);
 extern inline bool dds_entity_supports_validate_status (struct dds_entity *e);
 extern inline struct dds_statistics *dds_entity_deriver_create_statistics (const struct dds_entity *e);
 extern inline void dds_entity_deriver_refresh_statistics (const struct dds_entity *e, struct dds_statistics *s);
+extern inline dds_return_t dds_entity_deriver_enable (struct dds_entity *e);
 
 static int compare_instance_handle (const void *va, const void *vb)
 {
@@ -196,6 +200,41 @@ static bool entity_kind_has_qos (dds_entity_kind_t kind)
 }
 #endif
 
+void dds_entity_autoenable_children (dds_entity *e)
+{
+  struct dds_entity *c;
+  ddsrt_avl_iter_t it;
+
+  assert(e);
+  assert(e->m_flags & DDS_ENTITY_ENABLED);
+
+  /* enable all disabled children with the flag DDS_ENTITY_ENABLE_ON_PARENT */
+  for (c = ddsrt_avl_iter_first (&dds_entity_children_td, &e->m_children, &it); c != NULL; c = ddsrt_avl_iter_next (&it)) {
+    if ((!(c->m_flags & DDS_ENTITY_ENABLED)) && (c->m_flags & DDS_ENTITY_ENABLE_ON_PARENT)) {
+      dds_enable((dds_entity_t)c->m_hdllink.hdl);
+    }
+  }
+}
+
+static void dds_entity_init_mflags (dds_entity *e, dds_entity *parent, bool implicit)
+{
+  assert (e);
+
+  if (implicit)
+    e->m_flags |= DDS_ENTITY_IMPLICIT;
+  /* entity is enabled by default unless parent is not enabled or parent has
+   * autoenable_created_entities set to false */
+  e->m_flags |= DDS_ENTITY_ENABLED;
+  if (parent) {
+    if (parent->m_qos && parent->m_qos->entity_factory.autoenable_created_entities)
+      /* parent has autoenable set to true */
+      e->m_flags |= DDS_ENTITY_ENABLE_ON_PARENT;
+    /* do not enable if parent is not enabled or no autoenable */
+    if ((!parent->m_flags & DDS_ENTITY_ENABLED) || ((e->m_flags & DDS_ENTITY_ENABLE_ON_PARENT) == 0))
+      e->m_flags &= ~DDS_ENTITY_ENABLED;
+  }
+}
+
 dds_entity_t dds_entity_init (dds_entity *e, dds_entity *parent, dds_entity_kind_t kind, bool implicit, dds_qos_t *qos, const dds_listener_t *listener, status_mask_t mask)
 {
   dds_handle_t handle;
@@ -211,10 +250,10 @@ dds_entity_t dds_entity_init (dds_entity *e, dds_entity *parent, dds_entity_kind
   e->m_cb_pending_count = 0;
   e->m_observers = NULL;
 
-  /* TODO: CHAM-96: Implement dynamic enabling of entity. */
-  e->m_flags |= DDS_ENTITY_ENABLED;
-  if (implicit)
-    e->m_flags |= DDS_ENTITY_IMPLICIT;
+  /* All entities are enabled by default, except if the parent is not enabled or
+   * if the parent's entity factory qos indicates that children of this parent
+   * should not be enabled when created */
+  dds_entity_init_mflags (e, parent, implicit);
 
   /* set the status enable based on kind */
   if (entity_has_status (e))
@@ -1045,19 +1084,15 @@ dds_return_t dds_set_listener (dds_entity_t entity, const dds_listener_t *listen
 dds_return_t dds_enable (dds_entity_t entity)
 {
   dds_entity *e;
-  dds_return_t rc;
+  dds_return_t rc = DDS_RETCODE_OK;
 
   if ((rc = dds_entity_lock (entity, DDS_KIND_DONTCARE, &e)) != DDS_RETCODE_OK)
     return rc;
-
+  /* only enable entities that are not yet enabled */
   if ((e->m_flags & DDS_ENTITY_ENABLED) == 0)
-  {
-    /* TODO: Really enable. */
-    e->m_flags |= DDS_ENTITY_ENABLED;
-    DDS_CERROR (&e->m_domain->gv.logconfig, "Delayed entity enabling is not supported\n");
-  }
+    rc = dds_entity_deriver_enable(e);
   dds_entity_unlock (e);
-  return DDS_RETCODE_OK;
+  return rc;
 }
 
 dds_return_t dds_get_status_changes (dds_entity_t entity, uint32_t *status)

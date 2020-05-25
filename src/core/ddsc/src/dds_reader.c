@@ -33,6 +33,7 @@
 #include "dds/ddsi/ddsi_entity_index.h"
 #include "dds/ddsi/ddsi_security_omg.h"
 #include "dds/ddsi/ddsi_statistics.h"
+#include "dds/ddsi/ddsi_iid.h"
 
 DECL_ENTITY_LOCK_UNLOCK (extern inline, dds_reader)
 
@@ -50,16 +51,18 @@ static void dds_reader_close (dds_entity *e) ddsrt_nonnull_all;
 static void dds_reader_close (dds_entity *e)
 {
   struct dds_reader * const rd = (struct dds_reader *) e;
-  assert (rd->m_rd != NULL);
 
-  thread_state_awake (lookup_thread_state (), &e->m_domain->gv);
-  (void) delete_reader (&e->m_domain->gv, &e->m_guid);
-  thread_state_asleep (lookup_thread_state ());
+  /* nothing to close if there was no ddsi reader */
+  if (rd->m_rd != NULL) {
+    thread_state_awake (lookup_thread_state (), &e->m_domain->gv);
+    (void) delete_reader (&e->m_domain->gv, &e->m_guid);
+    thread_state_asleep (lookup_thread_state ());
 
-  ddsrt_mutex_lock (&e->m_mutex);
-  while (rd->m_rd != NULL)
-    ddsrt_cond_wait (&e->m_cond, &e->m_mutex);
-  ddsrt_mutex_unlock (&e->m_mutex);
+    ddsrt_mutex_lock (&e->m_mutex);
+    while (rd->m_rd != NULL)
+      ddsrt_cond_wait (&e->m_cond, &e->m_mutex);
+    ddsrt_mutex_unlock (&e->m_mutex);
+  }
 }
 
 static dds_return_t dds_reader_delete (dds_entity *e) ddsrt_nonnull_all;
@@ -391,6 +394,58 @@ static void dds_reader_refresh_statistics (const struct dds_entity *entity, stru
     ddsi_get_reader_stats (rd->m_rd, &stat->kv[0].u.u64);
 }
 
+static dds_return_t dds_reader_enable (struct dds_entity *e)
+{
+  struct dds_reader *rd = (struct dds_reader *) e;
+  dds_return_t rc;
+  const struct ddsi_guid * ppguid;
+  struct participant * pp;
+
+  assert (dds_entity_kind (e) == DDS_KIND_READER);
+
+
+  /* calling enable on an entity whose factory is not enabled
+   * returns PRECONDITION_NOT_MET */
+  if ((rd->m_entity.m_parent != NULL) && !dds_entity_is_enabled(rd->m_entity.m_parent))
+    return DDS_RETCODE_PRECONDITION_NOT_MET;
+
+  thread_state_awake (lookup_thread_state (), &e->m_domain->gv);
+
+  ppguid = dds_entity_participant_guid (rd->m_entity.m_parent);
+  pp = entidx_lookup_participant_guid (e->m_domain->gv.entity_index, ppguid);
+  /* When deleting a participant, the child handles (that include the subscriber)
+     are removed before removing the DDSI participant. So at this point, within
+     the subscriber lock, we can assert that the participant exists. */
+  assert (pp != NULL);
+
+#ifdef DDSI_INCLUDE_SECURITY
+  /* Check if DDS Security is enabled */
+  if (q_omg_participant_is_secure (pp))
+  {
+    /* ask to access control security plugin for create reader permissions */
+    if (!q_omg_security_check_create_reader (pp, e->m_domain->gv.config.domainId, rd->m_topic->m_stopic->name, rd->m_entity.m_qos))
+    {
+      rc = DDS_RETCODE_NOT_ALLOWED_BY_SECURITY;
+      goto err_not_allowed;
+    }
+  }
+#endif
+
+  /* the entity is enabled, so we can create a ddsi representative for this reader
+   * discovery of this reader will occur after the reader has been registered successfully */
+  if ((rc = new_reader (&rd->m_rd, &rd->m_entity.m_guid, NULL, pp, rd->m_topic->m_stopic, rd->m_entity.m_qos, &rd->m_rhc->common.rhc, dds_reader_status_cb, rd, rd->m_entity.m_iid)) == DDS_RETCODE_OK) {
+    rd->m_entity.m_flags |= DDS_ENTITY_ENABLED;
+    rd->m_entity.m_iid = get_entity_instance_id (&rd->m_entity.m_domain->gv, &rd->m_entity.m_guid);
+  }
+
+#ifdef DDSI_INCLUDE_SECURITY
+err_not_allowed:
+#endif
+
+  thread_state_asleep (lookup_thread_state ());
+  return rc;
+}
+
 const struct dds_entity_deriver dds_entity_deriver_reader = {
   .interrupt = dds_entity_deriver_dummy_interrupt,
   .close = dds_reader_close,
@@ -398,7 +453,8 @@ const struct dds_entity_deriver dds_entity_deriver_reader = {
   .set_qos = dds_reader_qos_set,
   .validate_status = dds_reader_status_validate,
   .create_statistics = dds_reader_create_statistics,
-  .refresh_statistics = dds_reader_refresh_statistics
+  .refresh_statistics = dds_reader_refresh_statistics,
+  .enable = dds_reader_enable
 };
 
 static dds_entity_t dds_create_reader_int (dds_entity_t participant_or_subscriber, dds_entity_t topic, const dds_qos_t *qos, const dds_listener_t *listener, struct dds_rhc *rhc)
@@ -410,6 +466,7 @@ static dds_entity_t dds_create_reader_int (dds_entity_t participant_or_subscribe
   dds_return_t rc;
   dds_entity_t pseudo_topic = 0;
   bool created_implicit_sub = false;
+  bool autoenable;
 
   switch (topic)
   {
@@ -464,7 +521,7 @@ static dds_entity_t dds_create_reader_int (dds_entity_t participant_or_subscribe
   }
 
   /* Prevent set_qos on the topic until reader has been created and registered: we can't
-     allow a TOPIC_DATA change to ccur before the reader has been created because that
+     allow a TOPIC_DATA change to occur before the reader has been created because that
      change would then not be published in the discovery/built-in topics.
 
      Don't keep the participant (which protects the topic's QoS) locked because that
@@ -497,27 +554,9 @@ static dds_entity_t dds_create_reader_int (dds_entity_t participant_or_subscribe
     goto err_bad_qos;
   }
 
-  thread_state_awake (lookup_thread_state (), gv);
-  const struct ddsi_guid * ppguid = dds_entity_participant_guid (&sub->m_entity);
-  struct participant * pp = entidx_lookup_participant_guid (gv->entity_index, ppguid);
-
-  /* When deleting a participant, the child handles (that include the subscriber)
-     are removed before removing the DDSI participant. So at this point, within
-     the subscriber lock, we can assert that the participant exists. */
-  assert (pp != NULL);
-
-#ifdef DDSI_INCLUDE_SECURITY
-  /* Check if DDS Security is enabled */
-  if (q_omg_participant_is_secure (pp))
-  {
-    /* ask to access control security plugin for create reader permissions */
-    if (!q_omg_security_check_create_reader (pp, gv->config.domainId, tp->m_stopic->name, rqos))
-    {
-      rc = DDS_RETCODE_NOT_ALLOWED_BY_SECURITY;
-      goto err_not_allowed;
-    }
-  }
-#endif
+  /* get the autoenable setting of the parent
+   * this setting determines if the entity must be enabled or not */
+  dds_qget_entity_factory(sub->m_entity.m_qos, &autoenable);
 
   /* Create reader and associated read cache (if not provided by caller) */
   struct dds_reader * const rd = dds_alloc (sizeof (*rd));
@@ -531,28 +570,20 @@ static dds_entity_t dds_create_reader_int (dds_entity_t participant_or_subscribe
     abort ();
   }
   dds_entity_add_ref_locked (&tp->m_entity);
-
   /* FIXME: listeners can come too soon ... should set mask based on listeners
      then atomically set the listeners, save the mask to a pending set and clear
      it; and then invoke those listeners that are in the pending set */
+  rd->m_entity.m_iid = ddsi_iid_gen();
+  if (autoenable) {
+    (void)dds_reader_enable(&rd->m_entity);
+  }
+  dds_entity_register_child (rd->m_entity.m_parent, &rd->m_entity);
   dds_entity_init_complete (&rd->m_entity);
-
-  rc = new_reader (&rd->m_rd, &rd->m_entity.m_guid, NULL, pp, tp->m_stopic, rqos, &rd->m_rhc->common.rhc, dds_reader_status_cb, rd);
-  assert (rc == DDS_RETCODE_OK); /* FIXME: can be out-of-resources at the very least */
-  thread_state_asleep (lookup_thread_state ());
-
-  rd->m_entity.m_iid = get_entity_instance_id (&rd->m_entity.m_domain->gv, &rd->m_entity.m_guid);
-  dds_entity_register_child (&sub->m_entity, &rd->m_entity);
-
   dds_topic_allow_set_qos (tp);
   dds_topic_unpin (tp);
   dds_subscriber_unlock (sub);
   return reader;
 
-#ifdef DDSI_INCLUDE_SECURITY
-err_not_allowed:
-  thread_state_asleep (lookup_thread_state ());
-#endif
 err_bad_qos:
   dds_delete_qos (rqos);
   dds_topic_allow_set_qos (tp);

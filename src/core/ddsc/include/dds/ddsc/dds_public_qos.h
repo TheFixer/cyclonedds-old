@@ -452,6 +452,17 @@ dds_qunset_bprop (
   dds_qos_t * __restrict qos,
   const char * name);
 
+/* @brief Set the entity-factory policy of a qos structure
+ *
+ * @param[in,out] qos - Pointer to a dds_qos_t structure that will store the policy
+ * @param[in] autoenable - True iff entities that are created from the factory for which
+ *                         this qos is applied are enabled
+ */
+DDS_EXPORT void
+dds_qset_entity_factory (
+  dds_qos_t * __restrict qos,
+  bool autoenable);
+
 /**
  * @brief Get the userdata from a qos structure
  *
@@ -820,6 +831,18 @@ dds_qget_bprop (
   const char * name,
   void ** value,
   size_t * sz);
+
+/* @brief Get the entity-factory qos policy
+ *
+ * @param[in] qos - Pointer to a dds_qos_t structure storing the policy
+ * @param[in,out] autoenable - Pointer that will store whether to enable child entities when created
+ *
+ * @returns - false iff any of the arguments is invalid or the requested qos value is not
+ *            present in the qos object
+ */
+DDS_EXPORT bool dds_qget_entity_factory (
+  const dds_qos_t * __restrict qos,
+  bool *autoenable);
 
 #if defined (__cplusplus)
 }

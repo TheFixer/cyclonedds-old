@@ -248,9 +248,9 @@ dds_builtintopic_endpoint_t;
  * will return the error DDS_RETCODE_NOT_ENABLED.
  *
  * Entities created with a parent that is disabled, are created disabled regardless of
- * the setting of the entityfactory policy.
+ * the setting of the DDS_EntityFactoryQosPolicy.
  *
- * If the entityfactory policy has autoenable_created_entities
+ * If the DDS_EntityFactoryQosPolicy has autoenable_created_entities
  * set to TRUE, the dds_enable operation on the parent will
  * automatically enable all child entities created with the parent.
  *
@@ -273,6 +273,8 @@ dds_builtintopic_endpoint_t;
  *             The entity has already been deleted.
  * @retval DDS_RETCODE_PRECONDITION_NOT_MET
  *             The parent of the given Entity is not enabled.
+ * @retval DDS_RETCODE_NOT_ALLOWED_BY_SECURITY
+ *             The security plugin prevents enabling of the Entity.
  */
 DDS_EXPORT dds_return_t
 dds_enable(dds_entity_t entity);
