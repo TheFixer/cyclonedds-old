@@ -230,7 +230,7 @@ static void dds_entity_init_mflags (dds_entity *e, dds_entity *parent, bool impl
       /* parent has autoenable set to true */
       e->m_flags |= DDS_ENTITY_ENABLE_ON_PARENT;
     /* do not enable if parent is not enabled or no autoenable */
-    if ((!parent->m_flags & DDS_ENTITY_ENABLED) || ((e->m_flags & DDS_ENTITY_ENABLE_ON_PARENT) == 0))
+    if ((!(parent->m_flags & DDS_ENTITY_ENABLED)) || ((e->m_flags & DDS_ENTITY_ENABLE_ON_PARENT) == 0))
       e->m_flags &= ~DDS_ENTITY_ENABLED;
   }
 }
