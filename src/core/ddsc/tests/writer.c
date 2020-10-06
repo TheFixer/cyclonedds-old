@@ -142,7 +142,6 @@ CU_Test(ddsc_create_writer, participant_mismatch, .init = setup, .fini = teardow
 }
 
 CU_Test(ddsc_writer, enable_by_default) {
-  dds_entity_t participant, publisher, writer, topic;
   dds_return_t status, status1;
   dds_qos_t *pqos, *wqos;
   bool autoenable;
@@ -188,7 +187,6 @@ CU_Test(ddsc_writer, enable_by_default) {
 }
 
 CU_Test(ddsc_writer, disable_writer_enable_later) {
-  dds_entity_t participant, publisher, writer, topic;
   dds_qos_t *pqos, *wqos;
   bool autoenable;
   bool status;
@@ -269,7 +267,6 @@ CU_Test(ddsc_writer, disable_writer_enable_later) {
 }
 
 CU_Test(ddsc_writer, delete_disabled_writer) {
-  dds_entity_t participant, publisher, writer, topic;
   dds_qos_t *pubqos, *wqos;
   dds_return_t ret;
   dds_history_kind_t hist_kind;
@@ -318,7 +315,6 @@ CU_Test(ddsc_writer, delete_disabled_writer) {
 }
 
 CU_Test(ddsc_writer, delete_parent_of_disabled_reader) {
-  dds_entity_t participant, publisher, writer, topic;
   dds_qos_t *pubqos;
   dds_return_t ret;
 
@@ -347,7 +343,6 @@ CU_Test(ddsc_writer, autoenable_disabled_writer) {
   dds_return_t ret;
   dds_history_kind_t hist_kind;
   int32_t hist_depth;
-  dds_entity_t participant, publisher, topic, writer;
 
   pqos = dds_create_qos();
   dds_qset_entity_factory(pqos, false);
