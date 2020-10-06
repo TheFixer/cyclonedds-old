@@ -872,7 +872,7 @@ static dds_return_t check_and_load_security_config (struct ddsi_domaingv * const
 }
 #endif
 
-dds_return_t new_participant_guid (ddsi_guid_t *ppguid, struct ddsi_domaingv *gv, unsigned flags, const ddsi_plist_t *plist, uint64_t iid)
+dds_return_t new_participant_guid (ddsi_guid_t *ppguid, struct ddsi_domaingv *gv, unsigned flags, const ddsi_plist_t *plist, const uint64_t iid)
 {
   struct participant *pp;
   ddsi_guid_t subguid, group_guid;
@@ -3791,7 +3791,7 @@ static void new_writer_guid_common_init (struct writer *wr, const struct ddsi_se
   local_reader_ary_init (&wr->rdary);
 }
 
-static dds_return_t new_writer_guid (struct writer **wr_out, const struct ddsi_guid *guid, const struct ddsi_guid *group_guid, struct participant *pp, const struct ddsi_sertopic *topic, const struct dds_qos *xqos, struct whc *whc, status_cb_t status_cb, void *status_entity, uint64_t iid)
+static dds_return_t new_writer_guid (struct writer **wr_out, const struct ddsi_guid *guid, const struct ddsi_guid *group_guid, struct participant *pp, const struct ddsi_sertopic *topic, const struct dds_qos *xqos, struct whc *whc, status_cb_t status_cb, void *status_entity, const uint64_t iid)
 {
   struct writer *wr;
   ddsrt_mtime_t tnow = ddsrt_time_monotonic ();
@@ -4290,7 +4290,7 @@ static dds_return_t new_reader_guid
   struct ddsi_rhc *rhc,
   status_cb_t status_cb,
   void * status_entity,
-  uint64_t iid
+  const uint64_t iid
 )
 {
   /* see new_writer_guid for comments */
