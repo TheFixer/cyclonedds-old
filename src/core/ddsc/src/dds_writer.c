@@ -430,14 +430,14 @@ dds_entity_t dds_create_writer (dds_entity_t participant_or_publisher, dds_entit
   wr->whc_batch = gv->config.whc_batch;
   wr->m_entity.m_iid = ddsi_iid_gen();
   if (autoenable) {
-    (void)dds_writer_enable(&wr->m_entity);
+    rc = dds_writer_enable(&wr->m_entity);
   }
   dds_entity_register_child (wr->m_entity.m_parent, &wr->m_entity);
   dds_entity_init_complete (&wr->m_entity);
   dds_topic_allow_set_qos (tp);
   dds_topic_unpin (tp);
   dds_publisher_unlock (pub);
-  return writer;
+  return (rc == DDS_RETCODE_NOT_ALLOWED_BY_SECURITY) ? rc : writer;
 
 err_bad_qos:
   dds_delete_qos(wqos);

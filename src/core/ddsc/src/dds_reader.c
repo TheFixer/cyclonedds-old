@@ -575,14 +575,14 @@ static dds_entity_t dds_create_reader_int (dds_entity_t participant_or_subscribe
      it; and then invoke those listeners that are in the pending set */
   rd->m_entity.m_iid = ddsi_iid_gen();
   if (autoenable) {
-    (void)dds_reader_enable(&rd->m_entity);
+    rc = dds_reader_enable(&rd->m_entity);
   }
   dds_entity_register_child (rd->m_entity.m_parent, &rd->m_entity);
   dds_entity_init_complete (&rd->m_entity);
   dds_topic_allow_set_qos (tp);
   dds_topic_unpin (tp);
   dds_subscriber_unlock (sub);
-  return reader;
+  return (rc == DDS_RETCODE_NOT_ALLOWED_BY_SECURITY) ? rc : reader;
 
 err_bad_qos:
   dds_delete_qos (rqos);
