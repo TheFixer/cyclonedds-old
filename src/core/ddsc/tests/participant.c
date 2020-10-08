@@ -16,6 +16,7 @@
 #include "config_env.h"
 #include "dds/version.h"
 #include "dds/ddsrt/environ.h"
+#include "test_common.h"
 
 
 CU_Test(ddsc_participant, create_and_delete) {
@@ -344,50 +345,48 @@ CU_Test(ddsc_participant_lookup, deleted) {
   dds_delete (participant);
 }
 
-CU_Test(ddsc_participant_enable, defaults) {
+/* This test verifies that participants are enabled by default */
+CU_Test(ddsc_participant, enable_by_default) {
   dds_entity_t participant;
-  dds_return_t status, status1;
+  dds_return_t ret;
   dds_qos_t *pqos;
   bool autoenable;
 
-  /* the participant on the default domain has it's entity factory enabled by default */
   participant = dds_create_participant (DDS_DOMAIN_DEFAULT, NULL, NULL);
   CU_ASSERT_FATAL(participant > 0);
   pqos = dds_create_qos();
-  status = dds_get_qos(participant, pqos);
-  CU_ASSERT_EQUAL_FATAL(status, DDS_RETCODE_OK);
-  status = dds_qget_entity_factory(pqos, &autoenable);
-  CU_ASSERT_EQUAL_FATAL(status, true);
+  /* validate that the autoenable is set to true by default */
+  ret = dds_get_qos(participant, pqos);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  ret = dds_qget_entity_factory(pqos, &autoenable);
+  CU_ASSERT_EQUAL_FATAL(ret, true);
   CU_ASSERT_EQUAL_FATAL(autoenable, true);
   /* enabling an already enabled entity is a noop */
-  status1 = dds_enable (participant);
-  CU_ASSERT_EQUAL_FATAL(status1, DDS_RETCODE_OK);
+  ret = dds_enable (participant);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
   /* we should actually check that the participant is really
    * enabled by trying to set a qos that cannot be changed once
    * the participant is enabled. However, such qos is not
    * available on the participant and therefore we cannot really
    * verify if the participant is enabled  */
-  status = dds_delete (participant);
-  CU_ASSERT_EQUAL_FATAL(status, DDS_RETCODE_OK);
+  ret = dds_delete (participant);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
   dds_delete_qos(pqos);
 }
 
-CU_Test(ddsc_participant_enable, autoenable) {
+CU_Test(ddsc_participant, autoenable_false) {
   dds_entity_t participant;
-  dds_qos_t *qos, *pqos;
+  dds_qos_t *pqos;
   bool autoenable;
   bool status;
   dds_return_t ret;
 
-  qos = dds_create_qos();
-  dds_qset_entity_factory(qos, false);
-
+  pqos = dds_create_qos();
+  dds_qset_entity_factory(pqos, false);
   /* create a participant and check that the
    * autoenable property is really disabled */
-  participant = dds_create_participant (DDS_DOMAIN_DEFAULT, qos, NULL);
+  participant = dds_create_participant (DDS_DOMAIN_DEFAULT, pqos, NULL);
   CU_ASSERT_FATAL(participant > 0);
-
-  pqos = dds_create_qos();
   ret = dds_get_qos(participant, pqos);
   CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
   status = dds_qget_entity_factory(pqos, &autoenable);
@@ -412,6 +411,90 @@ CU_Test(ddsc_participant_enable, autoenable) {
   CU_ASSERT_EQUAL_FATAL(autoenable, true);
   ret = dds_delete (participant);
   CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
-  dds_delete_qos(qos);
   dds_delete_qos(pqos);
+}
+
+/* The following test validates return codes for operations
+ * on a participant with autoenable=false
+ */
+CU_Test(ddsc_participant, not_autoenabled) {
+  dds_entity_t participant, publisher, subscriber, topic, ftopic, gcond, ws, reader, writer;
+  dds_qos_t *pqos, *wqos, *rqos;
+  bool autoenable;
+  bool status;
+  dds_return_t ret;
+  dds_history_kind_t hist_kind;
+  int32_t hist_depth;
+
+  pqos = dds_create_qos();
+  rqos = dds_create_qos();
+  wqos = dds_create_qos();
+  dds_qset_entity_factory(pqos, false);
+  /* create a disabled participant */
+  participant = dds_create_participant (DDS_DOMAIN_DEFAULT, pqos, NULL);
+  CU_ASSERT_FATAL(participant > 0);
+  /* dds_get_qos */
+  ret = dds_get_qos(participant, pqos);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  status = dds_qget_entity_factory(pqos, &autoenable);
+  CU_ASSERT_EQUAL_FATAL(status, true);
+  CU_ASSERT_EQUAL_FATAL(autoenable, false);
+  /* dds_create_publisher */
+  publisher = dds_create_publisher(participant, NULL, NULL);
+  CU_ASSERT_FATAL(publisher > 0);
+  /* dds_delete_publisher */
+  ret = dds_delete(publisher);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  /* dds_create_subscriber */
+  subscriber = dds_create_subscriber(participant, NULL, NULL);
+  CU_ASSERT_FATAL(publisher > 0);
+  /* dds_delete_subscriber */
+  ret = dds_delete(subscriber);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  /* dds_create_topic */
+  topic = dds_create_topic(participant, &Space_Type1_desc, "ddsc_participant_disabled", NULL, NULL);
+  CU_ASSERT_FATAL(topic > 0);
+  /* dds_create_topic_arbitrary */
+  /* dds_create_guardcondition */
+  gcond = dds_create_guardcondition(participant);
+  CU_ASSERT_FATAL(gcond > 0);
+  /* dds_create_waitset */
+  ws = dds_create_waitset(participant);
+  CU_ASSERT_FATAL(ws > 0);
+  /* dds_find_topic */
+  ftopic = dds_find_topic(participant, "ddsc_participant_disabled");
+  CU_ASSERT_FATAL(ftopic > 0);
+  /* dds_create_reader */
+  reader = dds_create_reader(participant, ftopic, NULL, NULL);
+  CU_ASSERT_FATAL(reader > 0);
+  dds_qset_history(rqos, DDS_HISTORY_KEEP_ALL, 0);
+  ret = dds_set_qos(reader, rqos);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  dds_qget_history(rqos, &hist_kind,&hist_depth);
+  CU_ASSERT_EQUAL_FATAL(hist_kind, DDS_HISTORY_KEEP_ALL);
+  CU_ASSERT_EQUAL_FATAL(hist_depth, 0);
+  /* dds_delete */
+  ret = dds_delete(reader);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  /* dds_create_writer */
+  writer = dds_create_writer(participant, ftopic, NULL, NULL);
+  CU_ASSERT_FATAL(writer > 0);
+  dds_qset_history(wqos, DDS_HISTORY_KEEP_ALL, 0);
+  ret = dds_set_qos(writer, wqos);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  dds_qget_history(wqos, &hist_kind,&hist_depth);
+  CU_ASSERT_EQUAL_FATAL(hist_kind, DDS_HISTORY_KEEP_ALL);
+  CU_ASSERT_EQUAL_FATAL(hist_depth, 0);
+  /* dds_delete */
+  ret = dds_delete(writer);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  /* dds_enable */
+  ret = dds_enable(participant);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  /* Done */
+  ret = dds_delete(participant);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  dds_delete_qos(pqos);
+  dds_delete_qos(wqos);
+  dds_delete_qos(rqos);
 }

@@ -14,6 +14,7 @@
 
 #include <stdio.h>
 #include "CUnit/Test.h"
+#include "test_common.h"
 
 /* We are deliberately testing some bad arguments that SAL will complain about.
  * So, silence SAL regarding these issues. */
@@ -124,6 +125,7 @@ CU_Test(ddsc_subscriber, create) {
   dds_delete(participant);
 }
 
+/* This test verifies that subscribers are enabled by default */
 CU_Test(ddsc_subscriber, enable_by_default) {
   dds_entity_t participant, subscriber;
   dds_return_t status, status1;
@@ -147,13 +149,10 @@ CU_Test(ddsc_subscriber, enable_by_default) {
   status = dds_qget_entity_factory(sqos, &autoenable);
   CU_ASSERT_EQUAL_FATAL(status, true);
   CU_ASSERT_EQUAL_FATAL(autoenable, true);
-  /* enabling an already enabled entity is a noop */
   status1 = dds_enable (subscriber);
   CU_ASSERT_EQUAL_FATAL(status1, DDS_RETCODE_OK);
   /* check that the subscriber is really enabled
-   * by trying to set a qos that cannot be changed once
-   * the subscriber is enabled. We use the presentation qos
-   * for that purpose */
+   * by trying to set an immutable qos */
   dds_qset_presentation(sqos, DDS_PRESENTATION_TOPIC, true, true);
   status = dds_set_qos(subscriber, sqos);
   CU_ASSERT_EQUAL_FATAL(status, DDS_RETCODE_IMMUTABLE_POLICY);
@@ -194,6 +193,10 @@ CU_Test(ddsc_subscriber, enable_by_default) {
   dds_delete_qos(pqos);
 }
 
+/* In this test a subscriber is created in a disabled state
+ * In this state immutable qos settings should still be changable.
+ * After the subsciber has been enabled these qos settings cannot
+ * change anymore */
 CU_Test(ddsc_subscriber, disabled_subscriber_enable_later) {
   dds_entity_t participant, subscriber;
   dds_qos_t *pqos, *sqos;
@@ -275,6 +278,73 @@ CU_Test(ddsc_subscriber, delete_disabled_subscriber) {
   ret = dds_delete(participant);
   CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
   dds_delete_qos(pqos);
+}
+
+CU_Test(ddsc_subscriber, not_enabled) {
+  dds_entity_t participant, subscriber, reader, topic;
+  dds_qos_t *pqos, *sqos, *rqos;
+  dds_return_t ret;
+  dds_history_kind_t hist_kind;
+  int32_t hist_depth;
+
+  pqos = dds_create_qos();
+  sqos = dds_create_qos();
+  rqos = dds_create_qos();
+  dds_qset_entity_factory(pqos, false);
+  /* create a participant with autoenable=false */
+  participant = dds_create_participant (DDS_DOMAIN_DEFAULT, pqos, NULL);
+  CU_ASSERT_FATAL(participant > 0);
+  /* create a default subscriber that should be disabled */
+  subscriber = dds_create_subscriber(participant, NULL, NULL);
+  CU_ASSERT_FATAL(subscriber > 0);
+  /* dds_get_qos */
+  ret = dds_get_qos(subscriber, sqos);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  dds_qset_presentation(sqos, DDS_PRESENTATION_GROUP, true, true);
+  /* dds_set_qos */
+  ret = dds_set_qos(subscriber, sqos);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  /* dds_create_topic */
+  topic = dds_create_topic(participant, &Space_Type1_desc, "ddsc_participant_disabled", NULL, NULL);
+  CU_ASSERT_FATAL(topic > 0);
+  /* dds_create_reader */
+  reader = dds_create_reader(participant, topic, NULL, NULL);
+  CU_ASSERT_FATAL(reader > 0);
+  dds_qset_history(rqos, DDS_HISTORY_KEEP_ALL, 0);
+  ret = dds_set_qos(reader, rqos);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  dds_qget_history(rqos, &hist_kind,&hist_depth);
+  CU_ASSERT_EQUAL_FATAL(hist_kind, DDS_HISTORY_KEEP_ALL);
+  CU_ASSERT_EQUAL_FATAL(hist_depth, 0);
+  /* dds_delete_reader */
+  ret = dds_delete(reader);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  /* dds_begin_coherent --> currently not implemented,
+   * but should return DDS_RETCODE_NOT_ENABLED once implemented */
+  ret = dds_begin_coherent(subscriber);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_UNSUPPORTED);
+  /* dds_end_coherent --> currently not implemented,
+   * but should return DDS_RETCODE_NOT_ENABLED once implemented */
+  ret = dds_end_coherent(subscriber);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_UNSUPPORTED);
+  /* dds_triggered */
+  ret = dds_triggered(subscriber);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_NOT_ENABLED);
+  /* dds_notify_readers --> currently unsupported, but once
+   * supported DDS_RETCODE_NOT_ENABLED should be returned */
+  ret =  dds_notify_readers(subscriber);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_UNSUPPORTED);
+  /* dds_enable */
+  ret = dds_enable(subscriber);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  /* dds_delete */
+  ret = dds_delete (subscriber);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  ret = dds_delete (participant);
+  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  dds_delete_qos(pqos);
+  dds_delete_qos(sqos);
+  dds_delete_qos(rqos);
 }
 
 #ifdef _MSC_VER
