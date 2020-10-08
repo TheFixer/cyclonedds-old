@@ -200,10 +200,11 @@ static bool entity_kind_has_qos (dds_entity_kind_t kind)
 }
 #endif
 
-void dds_entity_autoenable_children (dds_entity *e)
+dds_return_t dds_entity_autoenable_children (dds_entity *e)
 {
   struct dds_entity *c;
   ddsrt_avl_iter_t it;
+  dds_return_t rc = DDS_RETCODE_OK, ret;
 
   assert(e);
   assert(e->m_flags & DDS_ENTITY_ENABLED);
@@ -211,9 +212,13 @@ void dds_entity_autoenable_children (dds_entity *e)
   /* enable all disabled children with the flag DDS_ENTITY_ENABLE_ON_PARENT */
   for (c = ddsrt_avl_iter_first (&dds_entity_children_td, &e->m_children, &it); c != NULL; c = ddsrt_avl_iter_next (&it)) {
     if ((!(c->m_flags & DDS_ENTITY_ENABLED)) && (c->m_flags & DDS_ENTITY_ENABLE_ON_PARENT)) {
-      dds_enable((dds_entity_t)c->m_hdllink.hdl);
+      ret = dds_enable((dds_entity_t)c->m_hdllink.hdl);
+      if ((rc == DDS_RETCODE_OK) && (ret < 0)) {
+        rc = ret;
+      }
     }
   }
+  return rc;
 }
 
 static void dds_entity_init_mflags (dds_entity *e, dds_entity *parent, bool implicit)
@@ -1084,7 +1089,7 @@ dds_return_t dds_set_listener (dds_entity_t entity, const dds_listener_t *listen
 dds_return_t dds_enable (dds_entity_t entity)
 {
   dds_entity *e;
-  dds_return_t rc = DDS_RETCODE_OK;
+  dds_return_t rc;
 
   if ((rc = dds_entity_lock (entity, DDS_KIND_DONTCARE, &e)) != DDS_RETCODE_OK)
     return rc;
@@ -1352,10 +1357,15 @@ dds_return_t dds_triggered (dds_entity_t entity)
 
   if ((ret = dds_entity_lock (entity, DDS_KIND_DONTCARE, &e)) != DDS_RETCODE_OK)
     return ret;
+  if (!dds_entity_is_enabled(e)) {
+    ret = DDS_RETCODE_NOT_ENABLED;
+    goto err_enabled;
+  }
   if (entity_has_status (e))
     ret = ((ddsrt_atomic_ld32 (&e->m_status.m_status_and_mask) & SAM_STATUS_MASK) != 0);
   else
     ret = (ddsrt_atomic_ld32 (&e->m_status.m_trigger) != 0);
+err_enabled:
   dds_entity_unlock (e);
   return ret;
 }

@@ -49,8 +49,7 @@ static dds_return_t dds_subscriber_enable (struct dds_entity *e)
     return DDS_RETCODE_PRECONDITION_NOT_MET;
   /* enable the entity and all its children that were created with autoenable=true */
   sub->m_entity.m_flags |= DDS_ENTITY_ENABLED;
-  dds_entity_autoenable_children(&sub->m_entity);
-  return DDS_RETCODE_OK;
+  return dds_entity_autoenable_children(&sub->m_entity);
 }
 
 const struct dds_entity_deriver dds_entity_deriver_subscriber = {

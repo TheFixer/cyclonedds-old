@@ -19,7 +19,7 @@
 extern "C" {
 #endif
 
-DDS_EXPORT void dds_entity_autoenable_children (dds_entity *entity);
+DDS_EXPORT dds_return_t dds_entity_autoenable_children (dds_entity *entity);
 
 DDS_EXPORT dds_entity_t
 dds_entity_init(

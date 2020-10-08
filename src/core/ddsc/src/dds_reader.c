@@ -403,7 +403,6 @@ static dds_return_t dds_reader_enable (struct dds_entity *e)
 
   assert (dds_entity_kind (e) == DDS_KIND_READER);
 
-
   /* calling enable on an entity whose factory is not enabled
    * returns PRECONDITION_NOT_MET */
   if ((rd->m_entity.m_parent != NULL) && !dds_entity_is_enabled(rd->m_entity.m_parent))
@@ -575,15 +574,22 @@ static dds_entity_t dds_create_reader_int (dds_entity_t participant_or_subscribe
      it; and then invoke those listeners that are in the pending set */
   rd->m_entity.m_iid = ddsi_iid_gen();
   if (autoenable) {
-    rc = dds_reader_enable(&rd->m_entity);
+    rc = dds_reader_enable (&rd->m_entity);
   }
   dds_entity_register_child (rd->m_entity.m_parent, &rd->m_entity);
   dds_entity_init_complete (&rd->m_entity);
   dds_topic_allow_set_qos (tp);
   dds_topic_unpin (tp);
   dds_subscriber_unlock (sub);
-  return (rc == DDS_RETCODE_NOT_ALLOWED_BY_SECURITY) ? rc : reader;
+  /* Destroy the reader and return DDS_RETCODE_NOT_ALLOWED_BY_SECURITY
+   * when no credentials could be obtained in case of autoenabled=true */
+  if (rc == DDS_RETCODE_NOT_ALLOWED_BY_SECURITY)
+    goto err_not_allowed;
+  return reader;
 
+err_not_allowed:
+  (void) dds_delete (reader);
+  goto del_implicit_sub;
 err_bad_qos:
   dds_delete_qos (rqos);
   dds_topic_allow_set_qos (tp);
@@ -591,6 +597,7 @@ err_pp_mismatch:
   dds_topic_unpin (tp);
 err_pin_topic:
   dds_subscriber_unlock (sub);
+del_implicit_sub:
   if (created_implicit_sub)
     (void) dds_delete (subscriber);
   return rc;
@@ -676,6 +683,10 @@ dds_return_t dds_reader_wait_for_historical_data (dds_entity_t reader, dds_durat
   (void) max_wait;
   if ((ret = dds_reader_lock (reader, &rd)) != DDS_RETCODE_OK)
     return ret;
+  if (!dds_entity_is_enabled((dds_entity *)rd)) {
+    ret = DDS_RETCODE_NOT_ENABLED;
+    goto err_enable;
+  }
   switch (rd->m_entity.m_qos->durability.kind)
   {
     case DDS_DURABILITY_VOLATILE:
@@ -687,6 +698,7 @@ dds_return_t dds_reader_wait_for_historical_data (dds_entity_t reader, dds_durat
     case DDS_DURABILITY_PERSISTENT:
       break;
   }
+err_enable:
   dds_reader_unlock(rd);
   return ret;
 }

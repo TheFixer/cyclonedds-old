@@ -50,8 +50,7 @@ static dds_return_t dds_publisher_enable (struct dds_entity *e)
     return DDS_RETCODE_PRECONDITION_NOT_MET;
   pub->m_entity.m_flags |= DDS_ENTITY_ENABLED;
   /* enable the entity and all its children that were created with autoenable=true */
-  dds_entity_autoenable_children(&pub->m_entity);
-  return DDS_RETCODE_OK;
+  return dds_entity_autoenable_children(&pub->m_entity);
 }
 
 const struct dds_entity_deriver dds_entity_deriver_publisher = {

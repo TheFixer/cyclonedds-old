@@ -430,15 +430,22 @@ dds_entity_t dds_create_writer (dds_entity_t participant_or_publisher, dds_entit
   wr->whc_batch = gv->config.whc_batch;
   wr->m_entity.m_iid = ddsi_iid_gen();
   if (autoenable) {
-    rc = dds_writer_enable(&wr->m_entity);
+    rc = dds_writer_enable (&wr->m_entity);
   }
   dds_entity_register_child (wr->m_entity.m_parent, &wr->m_entity);
   dds_entity_init_complete (&wr->m_entity);
   dds_topic_allow_set_qos (tp);
   dds_topic_unpin (tp);
   dds_publisher_unlock (pub);
-  return (rc == DDS_RETCODE_NOT_ALLOWED_BY_SECURITY) ? rc : writer;
+  /* Destroy the writer and return DDS_RETCODE_NOT_ALLOWED_BY_SECURITY
+   * when no credentials could be obtained in case of autoenabled=true */
+  if (rc == DDS_RETCODE_NOT_ALLOWED_BY_SECURITY)
+    goto err_not_allowed;
+  return writer;
 
+err_not_allowed:
+  (void) dds_delete (writer);
+  goto del_implicit_pub;
 err_bad_qos:
   dds_delete_qos(wqos);
   dds_topic_allow_set_qos (tp);
@@ -446,6 +453,7 @@ err_pp_mismatch:
   dds_topic_unpin (tp);
 err_pin_topic:
   dds_publisher_unlock (pub);
+del_implicit_pub:
   if (created_implicit_pub)
     (void) dds_delete (publisher);
   return rc;
