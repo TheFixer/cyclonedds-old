@@ -324,7 +324,6 @@ static dds_return_t dds_writer_enable (struct dds_entity *e)
    * discovery of this writer will occur after the writer has been registered */
   if ((rc = new_writer (&wr->m_wr, &wr->m_entity.m_guid, NULL, pp, wr->m_topic->m_stopic, wr->m_entity.m_qos, wr->m_whc, dds_writer_status_cb, wr, wr->m_entity.m_iid)) == DDS_RETCODE_OK) {
     wr->m_entity.m_flags |= DDS_ENTITY_ENABLED;
-    wr->m_entity.m_iid = get_entity_instance_id (&wr->m_entity.m_domain->gv, &wr->m_entity.m_guid);
   }
 
 #ifdef DDSI_INCLUDE_SECURITY

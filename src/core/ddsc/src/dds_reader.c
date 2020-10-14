@@ -434,7 +434,6 @@ static dds_return_t dds_reader_enable (struct dds_entity *e)
    * discovery of this reader will occur after the reader has been registered successfully */
   if ((rc = new_reader (&rd->m_rd, &rd->m_entity.m_guid, NULL, pp, rd->m_topic->m_stopic, rd->m_entity.m_qos, &rd->m_rhc->common.rhc, dds_reader_status_cb, rd, rd->m_entity.m_iid)) == DDS_RETCODE_OK) {
     rd->m_entity.m_flags |= DDS_ENTITY_ENABLED;
-    rd->m_entity.m_iid = get_entity_instance_id (&rd->m_entity.m_domain->gv, &rd->m_entity.m_guid);
   }
 
 #ifdef DDSI_INCLUDE_SECURITY
