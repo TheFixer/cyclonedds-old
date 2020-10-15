@@ -490,7 +490,7 @@ void rd_wr_init_fail(
     *wr = dds_create_writer (*pub, *pub_tp, qos, NULL);
     CU_ASSERT_EQUAL_FATAL (exp_wr_fail, *wr <= 0);
     if (exp_wr_fail)
-      goto fail;
+      goto wr_fail;
     dds_set_status_mask (*wr, DDS_PUBLICATION_MATCHED_STATUS);
   }
   if (!exp_subtp_fail)
@@ -498,10 +498,15 @@ void rd_wr_init_fail(
     *rd = dds_create_reader (*sub, *sub_tp, qos, NULL);
     CU_ASSERT_EQUAL_FATAL (exp_rd_fail, *rd <= 0);
     if (exp_rd_fail)
-      goto fail;
+      goto rd_fail;
     dds_set_status_mask (*rd, DDS_SUBSCRIPTION_MATCHED_STATUS);
   }
-fail:
+  dds_delete_qos (qos);
+  return;
+
+rd_fail:
+  (void) dds_delete (*wr);
+wr_fail:
   dds_delete_qos (qos);
 }
 

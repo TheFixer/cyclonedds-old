@@ -220,8 +220,8 @@ static dds_return_t dds_writer_delete (dds_entity *e)
 {
   dds_writer * const wr = (dds_writer *) e;
 
-  /* as long as writer is not enabled ownership of
-   * whc is with ddsc entity, not with DDSI entity */
+  /* ownership of whc is with ddsc entity as long as
+   * writer is not enabled and therefore the writer */
   if (!dds_entity_is_enabled(e)) {
     whc_free(wr->m_whc);
   }
