@@ -221,6 +221,14 @@ static dds_return_t dds_writer_delete (dds_entity *e)
   dds_writer * const wr = (dds_writer *) e;
 
   /* FIXME: not freeing WHC here because it is owned by the DDSI entity */
+  /* The whc is normally owned by by the ddsi entity and the
+   * ddsi entty is responsible for deleting the whc. But in
+   * case the entity is not enabled there is no ddsi entity,
+   * and so the whc must be deleted when the ddsc writer gets
+   * deleted.
+   */
+  if (!dds_entity_is_enabled(e))
+    whc_free(wr->m_whc);
   thread_state_awake (lookup_thread_state (), &e->m_domain->gv);
   nn_xpack_free (wr->m_xp);
   thread_state_asleep (lookup_thread_state ());
