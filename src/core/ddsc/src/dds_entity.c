@@ -1581,3 +1581,13 @@ dds_return_t dds_assert_liveliness (dds_entity_t entity)
   dds_entity_unpin (e);
   return rc;
 }
+
+bool dds_entity_creation_allowed (const dds_return_t rc)
+{
+  switch (rc) {
+    case DDS_RETCODE_NOT_ALLOWED_BY_SECURITY:
+      return false;
+    default:
+      return true;
+  }
+}

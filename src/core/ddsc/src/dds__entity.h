@@ -178,6 +178,10 @@ dds_generic_unimplemented_operation(
         dds_entity_t handle,
         dds_entity_kind_t kind);
 
+DDS_EXPORT bool
+dds_entity_creation_allowed (
+  const dds_return_t rc);
+
 #if defined (__cplusplus)
 }
 #endif

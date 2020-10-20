@@ -220,15 +220,7 @@ static dds_return_t dds_writer_delete (dds_entity *e)
 {
   dds_writer * const wr = (dds_writer *) e;
 
-  /* FIXME: not freeing WHC here because it is owned by the DDSI entity */
-  /* The whc is normally owned by by the ddsi entity and the
-   * ddsi entty is responsible for deleting the whc. But in
-   * case the entity is not enabled there is no ddsi entity,
-   * and so the whc must be deleted when the ddsc writer gets
-   * deleted.
-   */
-  if (!dds_entity_is_enabled(e))
-    whc_free(wr->m_whc);
+  /* not freeing WHC here because it is owned by the DDSI entity */
   thread_state_awake (lookup_thread_state (), &e->m_domain->gv);
   nn_xpack_free (wr->m_xp);
   thread_state_asleep (lookup_thread_state ());
@@ -328,17 +320,28 @@ static dds_return_t dds_writer_enable (struct dds_entity *e)
     }
   }
 #endif
+  struct whc_writer_info *wrinfo;
+  struct ddsi_domaingv *gv = &e->m_domain->gv;
+
+  wrinfo = whc_make_wrinfo (wr, wr->m_entity.m_qos);
+  wr->m_whc = whc_new (gv, wrinfo);
+  whc_free_wrinfo (wrinfo);
 
   /* the entity is enabled, so we can create a ddsi representative for this writer
    * discovery of this writer will occur after the writer has been registered */
-  if ((rc = new_writer (&wr->m_wr, &wr->m_entity.m_guid, NULL, pp, wr->m_topic->m_stopic, wr->m_entity.m_qos, wr->m_whc, dds_writer_status_cb, wr, wr->m_entity.m_iid)) == DDS_RETCODE_OK)
-    wr->m_entity.m_flags |= DDS_ENTITY_ENABLED;
-
+  if ((rc = new_writer (&wr->m_wr, &wr->m_entity.m_guid, NULL, pp, wr->m_topic->m_stopic, wr->m_entity.m_qos, wr->m_whc, dds_writer_status_cb, wr, wr->m_entity.m_iid)) != DDS_RETCODE_OK)
+    goto err_new_writer;
+  wr->m_entity.m_flags |= DDS_ENTITY_ENABLED;
 #ifdef DDSI_INCLUDE_SECURITY
 err_not_allowed:
 #endif
 
   thread_state_asleep (lookup_thread_state ());
+  return rc;
+
+err_new_writer:
+  thread_state_asleep (lookup_thread_state ());
+  whc_free (wr->m_whc);
   return rc;
 }
 
@@ -360,7 +363,6 @@ dds_entity_t dds_create_writer (dds_entity_t participant_or_publisher, dds_entit
   dds_publisher *pub = NULL;
   dds_topic *tp;
   dds_entity_t publisher;
-  struct whc_writer_info *wrinfo;
   bool created_implicit_pub = false;
   bool autoenable;
 
@@ -431,9 +433,6 @@ dds_entity_t dds_create_writer (dds_entity_t participant_or_publisher, dds_entit
   wr->m_topic = tp;
   dds_entity_add_ref_locked (&tp->m_entity);
   wr->m_xp = nn_xpack_new (conn, get_bandwidth_limit (wqos->transport_priority), gv->config.xpack_send_async);
-  wrinfo = whc_make_wrinfo (wr, wqos);
-  wr->m_whc = whc_new (gv, wrinfo);
-  whc_free_wrinfo (wrinfo);
   wr->whc_batch = gv->config.whc_batch;
   wr->m_entity.m_iid = ddsi_iid_gen();
   if (autoenable) {
@@ -444,21 +443,15 @@ dds_entity_t dds_create_writer (dds_entity_t participant_or_publisher, dds_entit
   dds_topic_allow_set_qos (tp);
   dds_topic_unpin (tp);
   dds_publisher_unlock (pub);
-  /* Destroy the writer and return DDS_RETCODE_NOT_ALLOWED_BY_SECURITY
-   * when no credentials could be obtained in case of autoenabled=true */
-  if (rc == DDS_RETCODE_NOT_ALLOWED_BY_SECURITY)
+  /* destroy the writer when needed */
+  if (!dds_entity_creation_allowed (rc))
     goto err_not_allowed;
   return writer;
 
 err_not_allowed:
-  /* Normally, whc ownership is with the ddsi entity, and
-   * deletion of whc occurs when the ddsi entity is deleted.
-   * If security prevented creation of an autoenabled writer
-   * then no ddsi entity is created, and whc must be deleted
-   * explicitly in order to prevent leaking the whc
-   * when returning DDS_RETCODE_NOT_ALLOWED_BY_SECURITY
-   */
+#if 0
   whc_free (wr->m_whc);
+#endif
   (void) dds_delete (writer);
   goto del_implicit_pub;
 err_bad_qos:
