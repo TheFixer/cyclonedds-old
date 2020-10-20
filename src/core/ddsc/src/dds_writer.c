@@ -205,6 +205,7 @@ static void dds_writer_close (dds_entity *e)
     thread_state_awake (ts1, gv);
     nn_xpack_send (wr->m_xp, false);
     (void) delete_writer (gv, &e->m_guid);
+    nn_xpack_free(wr->m_xp);
     thread_state_asleep (ts1);
 
     ddsrt_mutex_lock (&e->m_mutex);
@@ -221,9 +222,10 @@ static dds_return_t dds_writer_delete (dds_entity *e)
   dds_writer * const wr = (dds_writer *) e;
 
   /* not freeing WHC here because it is owned by the DDSI entity */
+#if 0
   thread_state_awake (lookup_thread_state (), &e->m_domain->gv);
-  nn_xpack_free (wr->m_xp);
   thread_state_asleep (lookup_thread_state ());
+#endif
   dds_entity_drop_ref (&wr->m_topic->m_entity);
   return DDS_RETCODE_OK;
 }
@@ -322,7 +324,9 @@ static dds_return_t dds_writer_enable (struct dds_entity *e)
 #endif
   struct whc_writer_info *wrinfo;
   struct ddsi_domaingv *gv = &e->m_domain->gv;
+  ddsi_tran_conn_t conn = gv->xmit_conn;
 
+  wr->m_xp = nn_xpack_new (conn, get_bandwidth_limit (wr->m_entity.m_qos->transport_priority), gv->config.xpack_send_async);
   wrinfo = whc_make_wrinfo (wr, wr->m_entity.m_qos);
   wr->m_whc = whc_new (gv, wrinfo);
   whc_free_wrinfo (wrinfo);
@@ -340,8 +344,9 @@ err_not_allowed:
   return rc;
 
 err_new_writer:
-  thread_state_asleep (lookup_thread_state ());
   whc_free (wr->m_whc);
+  nn_xpack_free (wr->m_xp);
+  thread_state_asleep (lookup_thread_state ());
   return rc;
 }
 
@@ -427,12 +432,10 @@ dds_entity_t dds_create_writer (dds_entity_t participant_or_publisher, dds_entit
   dds_qget_entity_factory(pub->m_entity.m_qos, &autoenable);
 
   /* Create writer */
-  ddsi_tran_conn_t conn = gv->xmit_conn;
   struct dds_writer * const wr = dds_alloc (sizeof (*wr));
   const dds_entity_t writer = dds_entity_init (&wr->m_entity, &pub->m_entity, DDS_KIND_WRITER, false, wqos, listener, DDS_WRITER_STATUS_MASK);
   wr->m_topic = tp;
   dds_entity_add_ref_locked (&tp->m_entity);
-  wr->m_xp = nn_xpack_new (conn, get_bandwidth_limit (wqos->transport_priority), gv->config.xpack_send_async);
   wr->whc_batch = gv->config.whc_batch;
   wr->m_entity.m_iid = ddsi_iid_gen();
   if (autoenable) {
@@ -449,9 +452,6 @@ dds_entity_t dds_create_writer (dds_entity_t participant_or_publisher, dds_entit
   return writer;
 
 err_not_allowed:
-#if 0
-  whc_free (wr->m_whc);
-#endif
   (void) dds_delete (writer);
   goto del_implicit_pub;
 err_bad_qos:
