@@ -438,11 +438,11 @@ dds_entity_t dds_create_writer (dds_entity_t participant_or_publisher, dds_entit
   dds_entity_add_ref_locked (&tp->m_entity);
   wr->whc_batch = gv->config.whc_batch;
   wr->m_entity.m_iid = ddsi_iid_gen();
+  dds_entity_init_complete (&wr->m_entity);
   if (autoenable) {
     rc = dds_writer_enable (&wr->m_entity);
   }
   dds_entity_register_child (wr->m_entity.m_parent, &wr->m_entity);
-  dds_entity_init_complete (&wr->m_entity);
   dds_topic_allow_set_qos (tp);
   dds_topic_unpin (tp);
   dds_publisher_unlock (pub);

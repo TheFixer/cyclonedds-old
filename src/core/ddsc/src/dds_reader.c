@@ -72,7 +72,8 @@ static dds_return_t dds_reader_delete (dds_entity *e)
   dds_reader * const rd = (dds_reader *) e;
   dds_free (rd->m_loan);
   thread_state_awake (lookup_thread_state (), &e->m_domain->gv);
-  dds_rhc_free (rd->m_rhc);
+  if (rd->m_rhc)
+    dds_rhc_free (rd->m_rhc);
   thread_state_asleep (lookup_thread_state ());
   dds_entity_drop_ref (&rd->m_topic->m_entity);
   return DDS_RETCODE_OK;
@@ -400,6 +401,7 @@ static dds_return_t dds_reader_enable (struct dds_entity *e)
   dds_return_t rc;
   const struct ddsi_guid * ppguid;
   struct participant * pp;
+  bool rhc_created = false;
 
   assert (dds_entity_kind (e) == DDS_KIND_READER);
 
@@ -430,16 +432,33 @@ static dds_return_t dds_reader_enable (struct dds_entity *e)
   }
 #endif
 
+  rd->m_sample_rejected_status.last_reason = DDS_NOT_REJECTED;
+  if (rd->m_rhc == NULL) {
+    rd->m_rhc = dds_rhc_default_new (rd, rd->m_topic->m_stopic);
+    rhc_created = true;
+  }
+  if (dds_rhc_associate (rd->m_rhc, rd, rd->m_topic->m_stopic, rd->m_entity.m_domain->gv.m_tkmap) < 0)
+  {
+    /* FIXME: see also create_querycond, need to be able to undo entity_init */
+    abort ();
+  }
+
   /* the entity is enabled, so we can create a ddsi representative for this reader
    * discovery of this reader will occur after the reader has been registered successfully */
-  if ((rc = new_reader (&rd->m_rd, &rd->m_entity.m_guid, NULL, pp, rd->m_topic->m_stopic, rd->m_entity.m_qos, &rd->m_rhc->common.rhc, dds_reader_status_cb, rd, rd->m_entity.m_iid)) == DDS_RETCODE_OK) {
-    rd->m_entity.m_flags |= DDS_ENTITY_ENABLED;
-  }
+  if ((rc = new_reader (&rd->m_rd, &rd->m_entity.m_guid, NULL, pp, rd->m_topic->m_stopic, rd->m_entity.m_qos, &rd->m_rhc->common.rhc, dds_reader_status_cb, rd, rd->m_entity.m_iid)) != DDS_RETCODE_OK)
+    goto err_new_reader;
+  rd->m_entity.m_flags |= DDS_ENTITY_ENABLED;
 
 #ifdef DDSI_INCLUDE_SECURITY
 err_not_allowed:
 #endif
 
+thread_state_asleep (lookup_thread_state ());
+return rc;
+
+err_new_reader:
+  if (rhc_created)
+    dds_rhc_free (rd->m_rhc);
   thread_state_asleep (lookup_thread_state ());
   return rc;
 }
@@ -559,30 +578,24 @@ static dds_entity_t dds_create_reader_int (dds_entity_t participant_or_subscribe
   /* Create reader and associated read cache (if not provided by caller) */
   struct dds_reader * const rd = dds_alloc (sizeof (*rd));
   const dds_entity_t reader = dds_entity_init (&rd->m_entity, &sub->m_entity, DDS_KIND_READER, false, rqos, listener, DDS_READER_STATUS_MASK);
-  rd->m_sample_rejected_status.last_reason = DDS_NOT_REJECTED;
   rd->m_topic = tp;
-  rd->m_rhc = rhc ? rhc : dds_rhc_default_new (rd, tp->m_stopic);
-  if (dds_rhc_associate (rd->m_rhc, rd, tp->m_stopic, rd->m_entity.m_domain->gv.m_tkmap) < 0)
-  {
-    /* FIXME: see also create_querycond, need to be able to undo entity_init */
-    abort ();
-  }
+  rd->m_rhc = rhc;
   dds_entity_add_ref_locked (&tp->m_entity);
   /* FIXME: listeners can come too soon ... should set mask based on listeners
      then atomically set the listeners, save the mask to a pending set and clear
      it; and then invoke those listeners that are in the pending set */
   rd->m_entity.m_iid = ddsi_iid_gen();
+  dds_entity_init_complete (&rd->m_entity);
   if (autoenable) {
     rc = dds_reader_enable (&rd->m_entity);
   }
   dds_entity_register_child (rd->m_entity.m_parent, &rd->m_entity);
-  dds_entity_init_complete (&rd->m_entity);
   dds_topic_allow_set_qos (tp);
   dds_topic_unpin (tp);
   dds_subscriber_unlock (sub);
   /* Destroy the reader and return DDS_RETCODE_NOT_ALLOWED_BY_SECURITY
-   * when no credentials could be obtained in case of autoenabled=true */
-  if (rc == DDS_RETCODE_NOT_ALLOWED_BY_SECURITY)
+   * when no credentials could be obtained in case of auto_enabled=true */
+  if (!dds_entity_creation_allowed (rc))
     goto err_not_allowed;
   return reader;
 
