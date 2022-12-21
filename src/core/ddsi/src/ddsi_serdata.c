@@ -27,6 +27,7 @@ void ddsi_serdata_init (struct ddsi_serdata *d, const struct ddsi_sertype *tp, e
   d->hash = 0;
   d->statusinfo = 0;
   d->timestamp.v = INT64_MIN;
+  d->sequence_number = 0;
   d->twrite.v = INT64_MIN;
 #ifdef DDS_HAS_SHM
   d->iox_chunk = NULL;
@@ -50,6 +51,7 @@ struct ddsi_serdata *ddsi_serdata_ref_as_type (const struct ddsi_sertype *type, 
     {
       converted->statusinfo = serdata->statusinfo;
       converted->timestamp = serdata->timestamp;
+      converted->sequence_number = serdata->sequence_number;
     }
     ddsi_serdata_to_ser_unref (serdata, &iov);
     return converted;
