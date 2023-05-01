@@ -354,7 +354,8 @@ const struct ddsi_serdata_ops ddsi_serdata_ops_cdr = {
   .untyped_to_sample = serdata_cdr_untyped_to_sample_cdr,
   .print = serdata_cdr_print_cdr,
   .get_keyhash = 0,
-  .get_sequencenumber = 0
+  .get_sequencenumber = 0,
+  .get_writer_guid = 0
 #ifdef DDS_HAS_SHM
   , .get_sample_size = 0
   , .from_iox_buffer = 0

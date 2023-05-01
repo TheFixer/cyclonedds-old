@@ -129,6 +129,12 @@ static uint64_t serdata_default_get_sequencenumber(const struct ddsi_serdata *dc
   return d->c.sequence_number;
 }
 
+static ddsi_guid_t *serdata_default_get_writer_guid(const struct ddsi_serdata *dcmn)
+{
+  struct dds_serdata_default *d = (struct dds_serdata_default *) dcmn;
+  return &d->c.writer_guid;
+}
+
 static bool serdata_default_eqkey(const struct ddsi_serdata *acmn, const struct ddsi_serdata *bcmn)
 {
   const struct dds_serdata_default *a = (const struct dds_serdata_default *)acmn;
@@ -833,7 +839,8 @@ const struct ddsi_serdata_ops dds_serdata_ops_cdr = {
   .untyped_to_sample = serdata_default_untyped_to_sample_cdr,
   .print = serdata_default_print_cdr,
   .get_keyhash = serdata_default_get_keyhash,
-  .get_sequencenumber = serdata_default_get_sequencenumber
+  .get_sequencenumber = serdata_default_get_sequencenumber,
+  .get_writer_guid = serdata_default_get_writer_guid
 #ifdef DDS_HAS_SHM
   , .get_sample_size = ddsi_serdata_iox_size
   , .from_iox_buffer = serdata_default_from_iox
@@ -856,7 +863,8 @@ const struct ddsi_serdata_ops dds_serdata_ops_xcdr2 = {
   .untyped_to_sample = serdata_default_untyped_to_sample_cdr,
   .print = serdata_default_print_cdr,
   .get_keyhash = serdata_default_get_keyhash,
-  .get_sequencenumber = serdata_default_get_sequencenumber
+  .get_sequencenumber = serdata_default_get_sequencenumber,
+  .get_writer_guid = serdata_default_get_writer_guid
 #ifdef DDS_HAS_SHM
   , .get_sample_size = ddsi_serdata_iox_size
   , .from_iox_buffer = serdata_default_from_iox
@@ -879,7 +887,8 @@ const struct ddsi_serdata_ops dds_serdata_ops_cdr_nokey = {
   .untyped_to_sample = serdata_default_untyped_to_sample_cdr_nokey,
   .print = serdata_default_print_cdr,
   .get_keyhash = serdata_default_get_keyhash,
-  .get_sequencenumber = serdata_default_get_sequencenumber
+  .get_sequencenumber = serdata_default_get_sequencenumber,
+  .get_writer_guid = serdata_default_get_writer_guid
 #ifdef DDS_HAS_SHM
   , .get_sample_size = ddsi_serdata_iox_size
   , .from_iox_buffer = serdata_default_from_iox_nokey
@@ -902,7 +911,8 @@ const struct ddsi_serdata_ops dds_serdata_ops_xcdr2_nokey = {
   .untyped_to_sample = serdata_default_untyped_to_sample_cdr_nokey,
   .print = serdata_default_print_cdr,
   .get_keyhash = serdata_default_get_keyhash,
-  .get_sequencenumber = serdata_default_get_sequencenumber
+  .get_sequencenumber = serdata_default_get_sequencenumber,
+  .get_writer_guid = serdata_default_get_writer_guid
 #ifdef DDS_HAS_SHM
   , .get_sample_size = ddsi_serdata_iox_size
   , .from_iox_buffer = serdata_default_from_iox_nokey
