@@ -62,6 +62,10 @@ if(ENABLE_SECURITY)
     $<BUILD_INTERFACE:$<TARGET_PROPERTY:security_api,INTERFACE_INCLUDE_DIRECTORIES>>)
 endif()
 
+if(ENABLE_DURABILITY)
+  target_link_libraries(ddsc PRIVATE "$<BUILD_INTERFACE:durability>")
+endif()
+
 if(ENABLE_SHM)
   target_link_libraries(ddsc PRIVATE iceoryx_binding_c::iceoryx_binding_c)
 endif()
