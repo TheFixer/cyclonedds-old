@@ -35,6 +35,10 @@
 #include "dds/ddsi/ddsi_addrset.h"
 #endif
 
+#ifdef DDS_HAS_DURABILITY
+#include "dds/durability/dds_durability.h"
+#endif
+
 struct ddsi_serdata_plain { struct ddsi_serdata p; };
 struct ddsi_serdata_iox   { struct ddsi_serdata x; };
 struct ddsi_serdata_any   { struct ddsi_serdata a; };
@@ -564,6 +568,14 @@ dds_return_t dds_write_impl (dds_writer *wr, const void * data, dds_time_t tstam
   // 2. Topic filter
   if (!evalute_topic_filter (wr, data, writekey))
     return DDS_RETCODE_OK;
+
+#ifdef DDS_HAS_DURABILITY
+  if ((ddsi_wr->xqos->durability.kind == DDS_DURABILITY_TRANSIENT) || (ddsi_wr->xqos->durability.kind == DDS_DURABILITY_PERSISTENT)) {
+    if ((ret = dds_durability_check_quorum_reached(wr)) != DDS_RETCODE_OK) {
+      return DDS_RETCODE_PRECONDITION_NOT_MET;
+    }
+  }
+#endif
 
   ddsi_thread_state_awake (thrst, &wr->m_entity.m_domain->gv);
 #ifdef DDS_HAS_SHM

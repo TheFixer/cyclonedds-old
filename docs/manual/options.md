@@ -1766,7 +1766,7 @@ The default value is: `false`
 
 #### //CycloneDDS/Domain/Tracing/Category
 One of:
-* Comma-separated list of: fatal, error, warning, info, config, discovery, data, radmin, timing, traffic, topic, tcp, plist, whc, throttle, rhc, content, shm, trace
+* Comma-separated list of: fatal, error, warning, info, config, discovery, data, radmin, timing, traffic, topic, tcp, plist, whc, throttle, rhc, durability, content, shm, trace
 * Or empty
 
 This element enables individual logging categories. These are enabled in addition to those enabled by Tracing/Verbosity. Recognised categories are:
@@ -1798,6 +1798,7 @@ This element enables individual logging categories. These are enabled in additio
  * topic: tracing of topic definitions
 
  * plist: tracing of discovery parameter list interpretation
+ * durability: tracing of durable data
 
 In addition, there is the keyword trace that enables all but radmin, topic, plist and whc.
 The categorisation of tracing output is incomplete and hence most of the verbosity levels and categories are not of much use in the current release. This is an ongoing process and here we describe the target situation rather than the current situation. Currently, the most useful is trace.
@@ -1848,8 +1849,8 @@ The categorisation of tracing output is incomplete and hence most of the verbosi
 The default value is: `none`
 <!--- generated from ddsi_config.h[7f55b8f40b2e7f5984106abb0470128eb3d50017] -->
 <!--- generated from ddsi__cfgunits.h[bd22f0c0ed210501d0ecd3b07c992eca549ef5aa] -->
-<!--- generated from ddsi__cfgelems.h[771184755c23b94599f2ffd6e8c242dcea7d2658] -->
-<!--- generated from ddsi_config.c[1b4f1a011d558f331b8a547fd29ab473d0d926d5] -->
+<!--- generated from ddsi__cfgelems.h[df4f48a9fbd69b2332a37509c5c3b634471f60e5] -->
+<!--- generated from ddsi_config.c[77a03083e5b8362541a64e49e38b9f78daeeffc0] -->
 <!--- generated from _confgen.h[1b1d88a85bd851f4e87118505ded33f7b33b0435] -->
 <!--- generated from _confgen.c[237308acd53897a34e8c643e16e05a61d73ffd65] -->
 <!--- generated from generate_rnc.c[b50e4b7ab1d04b2bc1d361a0811247c337b74934] -->
