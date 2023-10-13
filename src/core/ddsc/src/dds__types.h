@@ -405,6 +405,10 @@ typedef struct dds_writer {
   void *m_iox_pub_loans[MAX_PUB_LOANS];
 #endif
 
+#ifdef DDS_HAS_DURABILITY
+  bool quorum_reached;  /* quorum reached indicator for durable writer; when false, publication of data is not permitted */
+#endif
+
   /* Status metrics */
 
   dds_liveliness_lost_status_t m_liveliness_lost_status;
